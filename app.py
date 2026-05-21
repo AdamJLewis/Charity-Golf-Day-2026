@@ -12,9 +12,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
-)
-
-
 JUSTGIVING_URL = "https://www.justgiving.com/page/queens-head-charity-golf"
 
 RAFFLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ1As4qQsj5j1tWxbVGheYTRUn_ti_jOkMvDjaxhWOwJamdl26hzKdoB3rGMKMsZLZf09qP4OpMKPCD/pub?gid=985645544&single=true&output=csv"
