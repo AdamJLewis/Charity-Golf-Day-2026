@@ -12,16 +12,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
-options = webdriver.ChromeOptions()
-options.add_argument("--headless")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-gpu")
-options.binary_location = "/usr/bin/chromium"
-
-driver = webdriver.Chrome(
-    service=Service("/usr/bin/chromedriver"),
-    options=options
 )
 
 
@@ -530,14 +520,16 @@ img {
 @st.cache_data(ttl=60)
 def get_fundraising_data():
 
-    options = webdriver.ChromeOptions()
-
-    options.add_argument("--headless")
+        options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    options.binary_location = "/usr/bin/chromium"
 
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
+        service=Service("/usr/bin/chromedriver"),
         options=options
     )
 
