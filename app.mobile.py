@@ -741,7 +741,7 @@ progress_percent = min(
 )
 
 
-logo_col1, logo_col2, logo_col3 = st.columns([1, 3.2, 1])
+logo_col2, logo_col3 = st.columns([3.2, 1])
 
 
 with logo_col2:
