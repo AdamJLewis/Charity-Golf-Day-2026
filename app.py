@@ -517,7 +517,7 @@ img {
 @st.cache_data(ttl=60)
 def get_fundraising_data():
 
-        options = webdriver.ChromeOptions()
+    options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -525,18 +525,27 @@ def get_fundraising_data():
     options.add_argument("--window-size=1920,1080")
     options.binary_location = "/usr/bin/chromium"
 
-    driver = webdriver.Chrome(
-        service=Service("/usr/bin/chromedriver"),
-        options=options
-    )
+    driver = None
 
-    driver.get(JUSTGIVING_URL)
+    try:
+        driver = webdriver.Chrome(
+            service=Service("/usr/bin/chromedriver"),
+            options=options
+        )
 
-    time.sleep(6)
+        driver.get(JUSTGIVING_URL)
 
-    body_text = driver.find_element(By.TAG_NAME, "body").text
+        time.sleep(6)
 
-    driver.quit()
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+
+    except Exception as error:
+        st.warning(f"Could not load JustGiving data at the moment: {error}")
+        return "£0", []
+
+    finally:
+        if driver is not None:
+            driver.quit()
 
     lines = [
         line.strip()
@@ -657,6 +666,7 @@ def get_fundraising_data():
             break
 
     return total_raised, donations
+
 
 
 def generate_qr_base64(url):
