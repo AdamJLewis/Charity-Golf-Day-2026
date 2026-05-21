@@ -466,6 +466,48 @@ img {
         inset 0 1px 0 rgba(255,255,255,0.9);
 }
 
+[data-testid="column"] {
+    padding: 0 0.5rem;
+}
+
+.element-container {
+    margin-bottom: 0.75rem;
+}
+
+@media screen and (max-width: 900px) {
+
+    .dashboard-card {
+        min-height: auto;
+        height: auto;
+        margin-bottom: 20px;
+        padding: 24px;
+    }
+
+    .main-title {
+        letter-spacing: 3.5px;
+    }
+
+    .sub-title {
+        letter-spacing: 3.5px;
+    }
+
+    .big-total {
+        font-size: 58px;
+    }
+
+    .qr-image img {
+        width: 170px;
+    }
+
+    .raffle-results-card {
+        min-height: auto;
+    }
+
+    .probability-card {
+        min-height: auto;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -503,7 +545,126 @@ def get_fundraising_data():
         if driver is not None:
             driver.quit()
 
-    return "£0", []
+    lines = [
+        line.strip()
+        for line in body_text.split("\n")
+        if line.strip()
+    ]
+
+    total_raised = "£0"
+
+    donations = []
+
+    money_pattern = r"£\s?\d[\d,]*(?:\.\d{2})?"
+
+    for i, line in enumerate(lines):
+
+        window = " ".join(lines[max(0, i - 5):min(len(lines), i + 8)]).lower()
+
+        if re.search(money_pattern, line) and (
+            "donation summary" in window
+            or "raised" in window
+            or "target" in window
+        ):
+
+            total_raised = re.search(money_pattern, line).group(0).replace(" ", "")
+            break
+
+    if total_raised == "£0":
+
+        fallback_total = re.search(money_pattern, body_text)
+
+        if fallback_total:
+            total_raised = fallback_total.group(0).replace(" ", "")
+
+    noise_terms = [
+        "online",
+        "charities pay",
+        "learn more",
+        "fees",
+        "give now",
+        "donate",
+        "donation summary",
+        "target",
+        "raised",
+        "gift aid",
+        "justgiving",
+        "share",
+        "fundraising",
+        "page",
+        "queens head",
+        "andysmanclub"
+    ]
+
+    section_start = 0
+
+    for i, line in enumerate(lines):
+
+        line_lower = line.lower()
+
+        if re.search(r"\d+\s+donation", line_lower):
+            section_start = i
+            break
+
+    scan_lines = lines[section_start:]
+
+    for i, line in enumerate(scan_lines):
+
+        amount_match = re.search(money_pattern, line)
+
+        if not amount_match:
+            continue
+
+        amount = amount_match.group(0).replace(" ", "")
+
+        window_text = " ".join(scan_lines[max(0, i - 8):min(len(scan_lines), i + 4)]).lower()
+
+        if any(term in window_text for term in ["online", "charities pay", "fee", "learn more"]):
+            continue
+
+        donor_name = "Anonymous"
+        message = ""
+
+        previous_lines = [
+            item.strip()
+            for item in scan_lines[max(0, i - 8):i]
+            if item.strip()
+        ]
+
+        cleaned_previous_lines = []
+
+        for candidate in previous_lines:
+
+            candidate_lower = candidate.lower()
+
+            if (
+                re.search(money_pattern, candidate)
+                or "ago" in candidate_lower
+                or any(term in candidate_lower for term in noise_terms)
+                or re.search(r"\d+\s+donation", candidate_lower)
+            ):
+                continue
+
+            cleaned_previous_lines.append(candidate)
+
+        if len(cleaned_previous_lines) >= 2:
+            donor_name = cleaned_previous_lines[-2]
+            message = cleaned_previous_lines[-1]
+
+        elif len(cleaned_previous_lines) == 1:
+            donor_name = cleaned_previous_lines[0]
+
+        donations.append({
+            "name": donor_name,
+            "amount": amount,
+            "message": message
+        })
+
+        if len(donations) >= 6:
+            break
+
+    return total_raised, donations
+
 
 
 def generate_qr_base64(url):
@@ -519,11 +680,71 @@ def generate_qr_base64(url):
     return qr_base64
 
 
+@st.cache_data(ttl=60)
+def get_raffle_entries():
+
+    try:
+
+        raffle_df = pd.read_csv(RAFFLE_SHEET_CSV_URL)
+
+        raffle_df.columns = raffle_df.columns.str.strip()
+
+        required_columns = ["Ticket Number", "Name"]
+
+        for column in required_columns:
+
+            if column not in raffle_df.columns:
+                return pd.DataFrame(columns=required_columns)
+
+        raffle_df = raffle_df[required_columns]
+
+        raffle_df["Ticket Number"] = raffle_df["Ticket Number"].astype(str)
+
+        raffle_df["Name"] = raffle_df["Name"].astype(str)
+
+        raffle_df = raffle_df.dropna(subset=["Ticket Number", "Name"])
+
+        raffle_df = raffle_df.sort_values(
+            by="Ticket Number",
+            key=lambda column: pd.to_numeric(column, errors="coerce")
+        )
+
+        return raffle_df
+
+    except Exception as error:
+
+        st.error(f"Could not load raffle entries: {error}")
+
+        return pd.DataFrame(columns=["Ticket Number", "Name"])
+
+
 total_raised, donations = get_fundraising_data()
 
-logo_col1, logo_col2 = st.columns([3.5, 1])
+raffle_df = get_raffle_entries()
 
-with logo_col1:
+
+amount_match = re.search(r'£([\d,]+(?:\.\d+)?)', total_raised)
+
+if amount_match:
+
+    numeric_amount = float(
+        amount_match.group(1).replace(",", "")
+    )
+
+else:
+
+    numeric_amount = 0
+
+progress_percent = min(
+    int((numeric_amount / TARGET_AMOUNT) * 100),
+    100
+)
+
+
+logo_col1, logo_col2, logo_col3 = st.columns([1, 3.2, 1])
+
+
+with logo_col2:
 
     st.markdown(
         f'<div class="main-title">{EVENT_NAME}</div>',
@@ -535,7 +756,7 @@ with logo_col1:
         unsafe_allow_html=True
     )
 
-with logo_col2:
+with logo_col3:
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
     st.image(ANDYS_LOGO, width=500)
 
@@ -543,6 +764,66 @@ with logo_col2:
 left_col, middle_col, right_col = st.columns([1, 1, 1])
 
 qr_base64 = generate_qr_base64(JUSTGIVING_URL)
+
+
+with left_col:
+
+    left_card_html = f"""
+<div class="dashboard-card">
+    <div class="section-heading">Raised So Far</div>
+    <div class="big-total">{total_raised}</div>
+    <div class="progress-container">
+        <div class="progress-bar" style="width:{progress_percent}%;">{progress_percent}%</div>
+    </div>
+    <div class="progress-helper">
+        <span>{progress_percent}% funded</span>
+        <span>Target £{TARGET_AMOUNT:,}</span>
+    </div>
+</div>
+"""
+
+    st.markdown(left_card_html, unsafe_allow_html=True)
+
+
+with middle_col:
+
+    if donations:
+
+        donation_html = ""
+
+        for donation in donations:
+
+            donor_name = escape(donation.get("name", "Anonymous"))
+            amount = escape(donation.get("amount", ""))
+            message = escape(donation.get("message", ""))
+
+            if not message:
+                message = "Thank you for your support"
+
+            donation_html += f"""
+<div class="donation-box">
+    <div>
+        <span class="donor-name">{donor_name}</span>
+        <span class="donation-amount">{amount}</span>
+    </div>
+    <div class="donation-message">{message}</div>
+</div>
+"""
+
+    else:
+
+        donation_html = """
+<div class="empty-donations">No recent donations found yet</div>
+"""
+
+    middle_card_html = f"""
+<div class="dashboard-card">
+    <div class="section-heading">Latest Supporters</div>
+    {donation_html}
+</div>
+"""
+
+    st.markdown(middle_card_html, unsafe_allow_html=True)
 
 
 with right_col:
@@ -558,6 +839,105 @@ with right_col:
     <div class="qr-text">Every £1 = 1 Raffle Ticket</div>
 </div>
 """
+
+    st.markdown(right_card_html, unsafe_allow_html=True)
+
+
+st.markdown(
+    """
+<div class="dashboard-card raffle-card">
+    <div class="raffle-title">Raffle Ticket Search</div>
+    <div class="raffle-helper">
+        Search your name to find your raffle ticket numbers and winning odds.
+    </div>
+</div>
+""",
+    unsafe_allow_html=True
+)
+
+search_name = st.text_input(
+    "Search your name",
+    placeholder="Type your name here"
+)
+
+if search_name:
+
+    filtered_raffle_df = raffle_df[
+        raffle_df["Name"].str.contains(search_name, case=False, na=False)
+    ]
+
+else:
+
+    filtered_raffle_df = raffle_df
+
+total_tickets = len(raffle_df)
+
+user_tickets = len(filtered_raffle_df)
+
+win_probability = 0
+
+if total_tickets > 0:
+    win_probability = round((user_tickets / total_tickets) * 100, 2)
+
+raffle_left, raffle_right = st.columns([1.55, 0.85])
+
+
+with raffle_left:
+
+    tickets_title = "Matching Tickets" if search_name else "All Tickets"
+
+    if filtered_raffle_df.empty:
+
+        table_html = '<div class="raffle-empty">No raffle tickets found</div>'
+
+    else:
+
+        raffle_rows = ""
+
+        for _, row in filtered_raffle_df.iterrows():
+
+            ticket_number = escape(str(row["Ticket Number"]))
+            name = escape(str(row["Name"]))
+
+            raffle_rows += f"<tr><td>{ticket_number}</td><td>{name}</td></tr>"
+
+        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Name</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
+
+    left_card_html = f'<div class="raffle-results-card"><div class="raffle-section-title">{tickets_title}</div>{table_html}</div>'
+
+    st.markdown(left_card_html, unsafe_allow_html=True)
+
+
+with raffle_right:
+
+    pie_degrees = min(max(win_probability * 3.6, 0), 360)
+
+    pie_background = f"conic-gradient(#e10600 0deg, #e10600 {pie_degrees}deg, #dddddd {pie_degrees}deg, #dddddd 360deg)"
+
+    if user_tickets > 0:
+
+        right_card_html = (
+            f'<div class="raffle-results-card probability-wrapper probability-card">'
+            f'<div class="raffle-section-title">Win Probability</div>'
+            f'<div class="css-pie-wrapper">'
+            f'<div class="css-pie" style="background:{pie_background};">'
+            f'<div class="css-pie-hole"></div>'
+            f'</div>'
+            f'</div>'
+            f'<div class="probability-number">{win_probability}%</div>'
+            f'<div class="probability-label">Chance based on selected tickets</div>'
+            f'<div class="ticket-count">{user_tickets} ticket(s) out of {total_tickets}</div>'
+            f'</div>'
+        )
+
+    else:
+
+        right_card_html = (
+            '<div class="raffle-results-card probability-wrapper probability-card">'
+            '<div class="raffle-section-title">Win Probability</div>'
+            '<div class="raffle-empty">No tickets selected</div>'
+            '</div>'
+        )
 
     st.markdown(right_card_html, unsafe_allow_html=True)
 
