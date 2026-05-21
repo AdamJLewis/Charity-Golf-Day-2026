@@ -743,7 +743,6 @@ progress_percent = min(
 
 logo_col2, logo_col3 = st.columns([3.2, 1])
 
-
 with logo_col2:
 
     st.markdown(
