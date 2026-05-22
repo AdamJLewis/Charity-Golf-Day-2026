@@ -11,4 +11,4 @@ jobs:
 
     steps:
       - name: Ping Streamlit app
-        run: curl -L https://queenshead-charity-golf-day-2026-mobile.streamlit.app/
+        run: curl -I --max-redirs 5 https://queenshead-charity-golf-day-2026-mobile.streamlit.app/
