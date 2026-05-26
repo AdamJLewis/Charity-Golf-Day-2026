@@ -2,7 +2,7 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -11,4 +11,4 @@ jobs:
 
     steps:
       - name: Ping Streamlit app
-        run: curl -I --max-redirs 5 https://queenshead-charity-golf-day-2026-mobile.streamlit.app/
+        run: curl --max-redirs 5 https://queenshead-charity-golf-day-2026-mobile.streamlit.app/
