@@ -691,7 +691,7 @@ def get_raffle_entries():
 
         raffle_df.columns = raffle_df.columns.str.strip()
 
-        required_columns = ["Ticket Number", "Name"]
+        required_columns = ["Ticket Number", "Ticket Holder"]
 
         for column in required_columns:
 
@@ -700,11 +700,16 @@ def get_raffle_entries():
 
         raffle_df = raffle_df[required_columns]
 
-        raffle_df["Ticket Number"] = raffle_df["Ticket Number"].astype(str)
+        raffle_df = raffle_df.dropna(subset=["Ticket Number", "Ticket Holder"])
 
-        raffle_df["Name"] = raffle_df["Name"].astype(str)
+        raffle_df["Ticket Number"] = raffle_df["Ticket Number"].astype(str).str.strip()
 
-        raffle_df = raffle_df.dropna(subset=["Ticket Number", "Name"])
+        raffle_df["Ticket Holder"] = raffle_df["Ticket Holder"].astype(str).str.strip()
+
+        raffle_df = raffle_df[
+            (raffle_df["Ticket Number"] != "")
+            & (raffle_df["Ticket Holder"] != "")
+        ]
 
         raffle_df = raffle_df.sort_values(
             by="Ticket Number",
@@ -717,7 +722,7 @@ def get_raffle_entries():
 
         st.error(f"Could not load raffle entries: {error}")
 
-        return pd.DataFrame(columns=["Ticket Number", "Name"])
+        return pd.DataFrame(columns=["Ticket Number", "Ticket Holder"])
 
 
 total_raised, donations = get_fundraising_data()
@@ -867,7 +872,7 @@ search_name = st.text_input(
 if search_name:
 
     filtered_raffle_df = raffle_df[
-        raffle_df["Name"].str.contains(search_name, case=False, na=False)
+        raffle_df["Ticket Holder"].str.contains(search_name, case=False, na=False)
     ]
 
 else:
@@ -901,11 +906,11 @@ with raffle_left:
         for _, row in filtered_raffle_df.iterrows():
 
             ticket_number = escape(str(row["Ticket Number"]))
-            name = escape(str(row["Name"]))
+            name = escape(str(row["Ticket Holder"]))
 
             raffle_rows += f"<tr><td>{ticket_number}</td><td>{name}</td></tr>"
 
-        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Name</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
+        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Ticket Holder</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
 
     left_card_html = f'<div class="raffle-results-card"><div class="raffle-section-title">{tickets_title}</div>{table_html}</div>'
 
