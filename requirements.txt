@@ -1,6 +1,5 @@
 streamlit
 pandas
 qrcode
-selenium
-beautifulsoup4
 requests
+beautifulsoup4
