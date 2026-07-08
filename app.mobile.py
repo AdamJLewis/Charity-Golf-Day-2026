@@ -126,11 +126,13 @@ img {
 
 .big-total {
     text-align: center;
-    font-size: clamp(60px, 6vw, 88px);
+    font-size: clamp(44px, 4.4vw, 66px);
     font-weight: 950;
-    line-height: 1;
+    line-height: 0.95;
     color: #e10600;
-    margin: 34px 0 30px 0;
+    margin: 30px 0 28px 0;
+    word-break: normal;
+    white-space: nowrap;
     text-shadow:
         0 4px 0 rgba(0,0,0,0.08),
         0 0 22px rgba(225, 6, 0, 0.18);
@@ -489,7 +491,7 @@ img {
     }
 
     .big-total {
-        font-size: 58px;
+        font-size: 44px;
     }
 
     .qr-image img {
@@ -624,12 +626,21 @@ def get_fundraising_data():
 
     for i, line in enumerate(donation_lines):
 
-        amount_match = re.search(money_pattern, line)
+    amount_match = re.search(money_pattern, line)
 
-        if not amount_match:
-            continue
+    if not amount_match:
+        continue
 
-        amount = amount_match.group(0).replace(" ", "")
+    nearby_text = " ".join(donation_lines[max(0, i - 3):i + 4]).lower()
+
+    if (
+        line.strip().startswith("+")
+        or "gift aid" in nearby_text
+        or "plus" in nearby_text
+    ):
+        continue
+
+    amount = amount_match.group(0).replace(" ", "")
 
         donor_name = "Anonymous"
 
