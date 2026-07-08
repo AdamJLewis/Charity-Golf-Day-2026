@@ -1021,8 +1021,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-time.sleep(REFRESH_SECONDS)
-
-st.rerun()
