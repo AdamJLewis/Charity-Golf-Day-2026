@@ -2,6 +2,7 @@ import streamlit as st
 import qrcode
 import re
 import base64
+import json
 import pandas as pd
 
 from io import BytesIO
@@ -534,7 +535,81 @@ def get_fundraising_data():
         st.warning(f"Could not load JustGiving data at the moment: {error}")
         return "£0", []
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    html = response.text
+    soup = BeautifulSoup(html, "html.parser")
+
+    money_pattern = r"£\s?\d[\d,]*(?:\.\d{2})?"
+
+    def normalise_money(value):
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            match = re.search(r"\d[\d,]*(?:\.\d{1,2})?", value)
+
+            if not match:
+                return None
+
+            return "£" + match.group(0).replace(" ", "")
+
+        if isinstance(value, (int, float)):
+            if value <= 0:
+                return None
+
+            if float(value).is_integer():
+                return f"£{int(value):,}"
+
+            return f"£{value:,.2f}"
+
+        return None
+
+    def walk_json(item):
+        if isinstance(item, dict):
+            for key, value in item.items():
+                key_text = str(key).lower()
+
+                if any(term in key_text for term in ["raised", "totalraised", "amountraised", "donationtotal"]):
+                    amount = normalise_money(value)
+
+                    if amount:
+                        return amount
+
+                found = walk_json(value)
+
+                if found:
+                    return found
+
+        elif isinstance(item, list):
+            for value in item:
+                found = walk_json(value)
+
+                if found:
+                    return found
+
+        return None
+
+    total_raised = "£0"
+
+    for script in soup.find_all("script"):
+        script_text = script.string or script.get_text(strip=True)
+
+        if not script_text:
+            continue
+
+        if "raised" not in script_text.lower() and "donation" not in script_text.lower():
+            continue
+
+        try:
+            if script.get("id") == "__NEXT_DATA__" or script_text.lstrip().startswith("{"):
+                parsed = json.loads(script_text)
+                found_total = walk_json(parsed)
+
+                if found_total:
+                    total_raised = found_total
+                    break
+
+        except Exception:
+            pass
 
     for item in soup(["script", "style", "noscript"]):
         item.decompose()
@@ -547,48 +622,38 @@ def get_fundraising_data():
         if line.strip()
     ]
 
-    total_raised = "£0"
-    donations = []
+    if total_raised == "£0":
+        total_patterns = [
+            rf"({money_pattern})\s*(?:raised|donated)",
+            rf"(?:raised|donated)\s*({money_pattern})",
+            rf"({money_pattern})\s*of\s*£\s?{TARGET_AMOUNT:,}",
+            rf"({money_pattern})\s*of\s*£\s?{TARGET_AMOUNT}",
+        ]
 
-    money_pattern = r"£\s?\d[\d,]*(?:\.\d{2})?"
+        for pattern in total_patterns:
+            match = re.search(pattern, body_text, re.IGNORECASE)
 
-    likely_total_patterns = [
-        r"£\s?\d[\d,]*(?:\.\d{2})?\s*raised",
-        r"raised\s*£\s?\d[\d,]*(?:\.\d{2})?",
-        r"£\s?\d[\d,]*(?:\.\d{2})?\s*of\s*£\s?\d[\d,]*(?:\.\d{2})?",
-    ]
-
-    for pattern in likely_total_patterns:
-        match = re.search(pattern, body_text, re.IGNORECASE)
-
-        if match:
-            amount_match = re.search(money_pattern, match.group(0))
-
-            if amount_match:
-                total_raised = amount_match.group(0).replace(" ", "")
+            if match:
+                total_raised = match.group(1).replace(" ", "")
                 break
 
     if total_raised == "£0":
-
         for i, line in enumerate(lines):
-
-            window = " ".join(lines[max(0, i - 5):min(len(lines), i + 8)]).lower()
+            line_lower = line.lower()
+            before = " ".join(lines[max(0, i - 3):i]).lower()
+            after = " ".join(lines[i + 1:min(len(lines), i + 4)]).lower()
 
             if re.search(money_pattern, line) and (
-                "donation summary" in window
-                or "raised" in window
-                or "target" in window
+                "raised" in line_lower
+                or "raised" in before
+                or "raised" in after
+                or "donation summary" in before
+                or "donation summary" in after
             ):
-
                 total_raised = re.search(money_pattern, line).group(0).replace(" ", "")
                 break
 
-    if total_raised == "£0":
-
-        fallback_total = re.search(money_pattern, body_text)
-
-        if fallback_total:
-            total_raised = fallback_total.group(0).replace(" ", "")
+    donations = []
 
     noise_terms = [
         "online",
@@ -612,27 +677,24 @@ def get_fundraising_data():
     section_start = 0
 
     for i, line in enumerate(lines):
-
         line_lower = line.lower()
 
-        if re.search(r"\d+\s+donation", line_lower):
+        if re.search(r"\d+\s+donation", line_lower) or "supporters" in line_lower:
             section_start = i
             break
 
     scan_lines = lines[section_start:]
 
     for i, line in enumerate(scan_lines):
-
         amount_match = re.search(money_pattern, line)
 
         if not amount_match:
             continue
 
         amount = amount_match.group(0).replace(" ", "")
-
         window_text = " ".join(scan_lines[max(0, i - 8):min(len(scan_lines), i + 4)]).lower()
 
-        if any(term in window_text for term in ["online", "charities pay", "fee", "learn more"]):
+        if any(term in window_text for term in ["online", "charities pay", "fee", "learn more", "target", "raised"]):
             continue
 
         donor_name = "Anonymous"
@@ -647,7 +709,6 @@ def get_fundraising_data():
         cleaned_previous_lines = []
 
         for candidate in previous_lines:
-
             candidate_lower = candidate.lower()
 
             if (
@@ -677,7 +738,6 @@ def get_fundraising_data():
             break
 
     return total_raised, donations
-
 
 def generate_qr_base64(url):
 
