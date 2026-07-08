@@ -12,16 +12,13 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
+
 JUSTGIVING_URL = "https://www.justgiving.com/page/queens-head-charity-golf"
 
 RAFFLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ1As4qQsj5j1tWxbVGheYTRUn_ti_jOkMvDjaxhWOwJamdl26hzKdoB3rGMKMsZLZf09qP4OpMKPCD/pub?gid=985645544&single=true&output=csv"
 
-REFRESH_SECONDS = 300
-
 EVENT_NAME = "Queens Head Charity Golf Day"
-
 TARGET_AMOUNT = 2000
-
 ANDYS_LOGO = "andysmanclub.png"
 
 
@@ -356,20 +353,6 @@ img {
     padding-right: 6px;
 }
 
-.raffle-table-wrapper::-webkit-scrollbar {
-    width: 8px;
-}
-
-.raffle-table-wrapper::-webkit-scrollbar-track {
-    background: #f2f2f2;
-    border-radius: 999px;
-}
-
-.raffle-table-wrapper::-webkit-scrollbar-thumb {
-    background: #e10600;
-    border-radius: 999px;
-}
-
 .raffle-table th {
     text-align: left;
     color: #111111;
@@ -512,16 +495,21 @@ img {
 """, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_fundraising_data():
 
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")
+
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    options.binary_location = "/usr/bin/chromium"
+    options.add_argument("--single-process")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--remote-debugging-port=9222")
+
+    options.binary_location = "/usr/bin/chromium-browser"
 
     driver = None
 
@@ -552,7 +540,6 @@ def get_fundraising_data():
     ]
 
     total_raised = "£0"
-
     donations = []
 
     money_pattern = r"£\s?\d[\d,]*(?:\.\d{2})?"
@@ -566,7 +553,6 @@ def get_fundraising_data():
             or "raised" in window
             or "target" in window
         ):
-
             total_raised = re.search(money_pattern, line).group(0).replace(" ", "")
             break
 
@@ -666,7 +652,6 @@ def get_fundraising_data():
     return total_raised, donations
 
 
-
 def generate_qr_base64(url):
 
     qr = qrcode.make(url)
@@ -680,11 +665,10 @@ def generate_qr_base64(url):
     return qr_base64
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_raffle_entries():
 
     try:
-
         raffle_df = pd.read_csv(RAFFLE_SHEET_CSV_URL)
 
         raffle_df.columns = raffle_df.columns.str.strip()
@@ -712,9 +696,7 @@ def get_raffle_entries():
         return raffle_df
 
     except Exception as error:
-
         st.error(f"Could not load raffle entries: {error}")
-
         return pd.DataFrame(columns=["Ticket Number", "Ticket Holder"])
 
 
@@ -734,6 +716,7 @@ if amount_match:
 else:
 
     numeric_amount = 0
+
 
 progress_percent = min(
     int((numeric_amount / TARGET_AMOUNT) * 100),
@@ -755,7 +738,9 @@ with logo_col2:
         unsafe_allow_html=True
     )
 
+
 with logo_col3:
+
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
     st.image(ANDYS_LOGO, width=500)
 
@@ -854,10 +839,12 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
 search_name = st.text_input(
     "Search your name",
     placeholder="Type your name here"
 )
+
 
 if search_name:
 
@@ -869,14 +856,15 @@ else:
 
     filtered_raffle_df = raffle_df
 
-total_tickets = len(raffle_df)
 
+total_tickets = len(raffle_df)
 user_tickets = len(filtered_raffle_df)
 
 win_probability = 0
 
 if total_tickets > 0:
     win_probability = round((user_tickets / total_tickets) * 100, 2)
+
 
 raffle_left, raffle_right = st.columns([1.55, 0.85])
 
@@ -900,9 +888,28 @@ with raffle_left:
 
             raffle_rows += f"<tr><td>{ticket_number}</td><td>{name}</td></tr>"
 
-        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Ticket Holder</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
+        table_html = f"""
+<div class="raffle-table-wrapper">
+    <table class="raffle-table">
+        <thead>
+            <tr>
+                <th>Ticket Number</th>
+                <th>Ticket Holder</th>
+            </tr>
+        </thead>
+        <tbody>
+            {raffle_rows}
+        </tbody>
+    </table>
+</div>
+"""
 
-    left_card_html = f'<div class="raffle-results-card"><div class="raffle-section-title">{tickets_title}</div>{table_html}</div>'
+    left_card_html = f"""
+<div class="raffle-results-card">
+    <div class="raffle-section-title">{tickets_title}</div>
+    {table_html}
+</div>
+"""
 
     st.markdown(left_card_html, unsafe_allow_html=True)
 
@@ -951,6 +958,4 @@ st.markdown(
 )
 
 
-time.sleep(REFRESH_SECONDS)
-
-st.rerun()
+st.caption("Donation and raffle data refresh automatically when the cache expires.")
