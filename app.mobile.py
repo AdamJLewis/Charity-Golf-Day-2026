@@ -3,19 +3,22 @@ import qrcode
 import re
 import base64
 import pandas as pd
-import requests
 
 from io import BytesIO
 from html import escape
-from bs4 import BeautifulSoup
 
+import requests
+from bs4 import BeautifulSoup
 
 JUSTGIVING_URL = "https://www.justgiving.com/page/queens-head-charity-golf"
 
 RAFFLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ1As4qQsj5j1tWxbVGheYTRUn_ti_jOkMvDjaxhWOwJamdl26hzKdoB3rGMKMsZLZf09qP4OpMKPCD/pub?gid=985645544&single=true&output=csv"
 
+
 EVENT_NAME = "Queens Head Charity Golf Day"
+
 TARGET_AMOUNT = 2000
+
 ANDYS_LOGO = "andysmanclub.png"
 
 
@@ -123,7 +126,7 @@ img {
 
 .big-total {
     text-align: center;
-    font-size: clamp(44px, 4.4vw, 66px);
+    font-size: clamp(42px, 4.2vw, 64px);
     font-weight: 950;
     line-height: 0.95;
     color: #e10600;
@@ -190,6 +193,15 @@ img {
     color: #e10600;
     font-size: 16px;
     font-weight: 950;
+}
+
+.donation-message {
+    clear: both;
+    color: #555555;
+    font-size: 13px;
+    margin-top: 6px;
+    font-style: italic;
+    line-height: 1.35;
 }
 
 .empty-donations {
@@ -342,6 +354,20 @@ img {
     padding-right: 6px;
 }
 
+.raffle-table-wrapper::-webkit-scrollbar {
+    width: 8px;
+}
+
+.raffle-table-wrapper::-webkit-scrollbar-track {
+    background: #f2f2f2;
+    border-radius: 999px;
+}
+
+.raffle-table-wrapper::-webkit-scrollbar-thumb {
+    background: #e10600;
+    border-radius: 999px;
+}
+
 .raffle-table th {
     text-align: left;
     color: #111111;
@@ -464,7 +490,7 @@ img {
     }
 
     .big-total {
-        font-size: 44px;
+        font-size: 42px;
     }
 
     .qr-image img {
@@ -530,13 +556,13 @@ def get_fundraising_data():
 
         if line.lower() == "donation summary":
 
-            nearby_lines = lines[i:i + 20]
+            nearby_lines = lines[i:i + 25]
 
             for j, nearby_line in enumerate(nearby_lines):
 
                 if nearby_line.lower() == "total":
 
-                    for candidate in nearby_lines[j + 1:j + 5]:
+                    for candidate in nearby_lines[j + 1:j + 6]:
 
                         amount_match = re.search(money_pattern, candidate)
 
@@ -550,19 +576,20 @@ def get_fundraising_data():
 
     if total_raised == "£0":
 
-        for i, line in enumerate(lines):
+        summary_text = " ".join(lines)
 
-            line_lower = line.lower()
+        total_patterns = [
+            r"total\s*(£\s?\d[\d,]*(?:\.\d{2})?)",
+            r"raised\s*(£\s?\d[\d,]*(?:\.\d{2})?)",
+            r"(£\s?\d[\d,]*(?:\.\d{2})?)\s*raised",
+        ]
 
-            if "raised" in line_lower or "fundraising" in line_lower:
+        for pattern in total_patterns:
+            total_match = re.search(pattern, summary_text, flags=re.IGNORECASE)
 
-                nearby_text = " ".join(lines[max(0, i - 4):i + 8])
-
-                amounts = re.findall(money_pattern, nearby_text)
-
-                if amounts:
-                    total_raised = amounts[-1].replace(" ", "")
-                    break
+            if total_match:
+                total_raised = total_match.group(1).replace(" ", "")
+                break
 
     donations = []
 
@@ -592,8 +619,13 @@ def get_fundraising_data():
         "fee",
         "learn more",
         "queens head",
-        "andysmanclub"
+        "andysmanclub",
+        "supporting",
+        "every £1",
+        "raffle",
     ]
+
+    seen_donations = set()
 
     for i, line in enumerate(donation_lines):
 
@@ -602,45 +634,62 @@ def get_fundraising_data():
         if not amount_match:
             continue
 
-        nearby_text = " ".join(donation_lines[max(0, i - 4):i + 4]).lower()
-
-        previous_clean_line = ""
+        previous_non_empty = ""
 
         for previous_line in reversed(donation_lines[max(0, i - 4):i]):
             if previous_line.strip():
-                previous_clean_line = previous_line.strip()
+                previous_non_empty = previous_line.strip()
                 break
 
+        next_text = " ".join(donation_lines[i + 1:i + 4]).lower()
+        current_clean = line.strip()
+
         if (
-            line.strip().startswith("+")
-            or previous_clean_line == "+"
-            or "gift aid" in nearby_text
-            or "plus gift aid" in nearby_text
+            current_clean.startswith("+")
+            or previous_non_empty == "+"
+            or current_clean.lower().startswith("gift aid")
         ):
             continue
 
         amount = amount_match.group(0).replace(" ", "")
 
-        donor_name = "Anonymous"
+        previous_lines = [
+            item.strip()
+            for item in donation_lines[max(0, i - 10):i]
+            if item.strip()
+        ]
 
-        previous_lines = donation_lines[max(0, i - 10):i]
+        cleaned_previous_lines = []
 
-        for previous_line in reversed(previous_lines):
+        for previous_line in previous_lines:
 
-            previous_clean = previous_line.strip()
-            previous_lower = previous_clean.lower()
+            previous_lower = previous_line.lower()
 
             if (
-                previous_clean == "+"
+                previous_line == "+"
                 or previous_lower.startswith("#")
-                or re.search(money_pattern, previous_clean)
+                or re.search(money_pattern, previous_line)
                 or "ago" in previous_lower
                 or any(term in previous_lower for term in ignore_terms)
             ):
                 continue
 
-            donor_name = previous_clean
-            break
+            cleaned_previous_lines.append(previous_line)
+
+        donor_name = "Anonymous"
+
+        if len(cleaned_previous_lines) >= 2:
+            donor_name = cleaned_previous_lines[-2]
+
+        elif len(cleaned_previous_lines) == 1:
+            donor_name = cleaned_previous_lines[0]
+
+        donation_key = (donor_name, amount)
+
+        if donation_key in seen_donations:
+            continue
+
+        seen_donations.add(donation_key)
 
         donations.append({
             "name": donor_name,
@@ -721,7 +770,6 @@ else:
 
     numeric_amount = 0
 
-
 progress_percent = min(
     int((numeric_amount / TARGET_AMOUNT) * 100),
     100
@@ -742,9 +790,7 @@ with logo_col2:
         unsafe_allow_html=True
     )
 
-
 with logo_col3:
-
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
     st.image(ANDYS_LOGO, width=500)
 
@@ -853,15 +899,14 @@ else:
 
     filtered_raffle_df = raffle_df
 
-
 total_tickets = len(raffle_df)
+
 user_tickets = len(filtered_raffle_df)
 
 win_probability = 0
 
 if total_tickets > 0:
     win_probability = round((user_tickets / total_tickets) * 100, 2)
-
 
 raffle_left, raffle_right = st.columns([1.55, 0.85])
 
@@ -885,28 +930,9 @@ with raffle_left:
 
             raffle_rows += f"<tr><td>{ticket_number}</td><td>{name}</td></tr>"
 
-        table_html = f"""
-<div class="raffle-table-wrapper">
-    <table class="raffle-table">
-        <thead>
-            <tr>
-                <th>Ticket Number</th>
-                <th>Ticket Holder</th>
-            </tr>
-        </thead>
-        <tbody>
-            {raffle_rows}
-        </tbody>
-    </table>
-</div>
-"""
+        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Ticket Holder</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
 
-    left_card_html = f"""
-<div class="raffle-results-card">
-    <div class="raffle-section-title">{tickets_title}</div>
-    {table_html}
-</div>
-"""
+    left_card_html = f'<div class="raffle-results-card"><div class="raffle-section-title">{tickets_title}</div>{table_html}</div>'
 
     st.markdown(left_card_html, unsafe_allow_html=True)
 
