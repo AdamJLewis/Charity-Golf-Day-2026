@@ -3,22 +3,19 @@ import qrcode
 import re
 import base64
 import pandas as pd
+import requests
 
 from io import BytesIO
 from html import escape
-
-import requests
 from bs4 import BeautifulSoup
+
 
 JUSTGIVING_URL = "https://www.justgiving.com/page/queens-head-charity-golf"
 
 RAFFLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ1As4qQsj5j1tWxbVGheYTRUn_ti_jOkMvDjaxhWOwJamdl26hzKdoB3rGMKMsZLZf09qP4OpMKPCD/pub?gid=985645544&single=true&output=csv"
 
-
 EVENT_NAME = "Queens Head Charity Golf Day"
-
 TARGET_AMOUNT = 2000
-
 ANDYS_LOGO = "andysmanclub.png"
 
 
@@ -131,7 +128,6 @@ img {
     line-height: 0.95;
     color: #e10600;
     margin: 30px 0 28px 0;
-    word-break: normal;
     white-space: nowrap;
     text-shadow:
         0 4px 0 rgba(0,0,0,0.08),
@@ -194,15 +190,6 @@ img {
     color: #e10600;
     font-size: 16px;
     font-weight: 950;
-}
-
-.donation-message {
-    clear: both;
-    color: #555555;
-    font-size: 13px;
-    margin-top: 6px;
-    font-style: italic;
-    line-height: 1.35;
 }
 
 .empty-donations {
@@ -353,20 +340,6 @@ img {
     height: 335px;
     overflow-y: auto;
     padding-right: 6px;
-}
-
-.raffle-table-wrapper::-webkit-scrollbar {
-    width: 8px;
-}
-
-.raffle-table-wrapper::-webkit-scrollbar-track {
-    background: #f2f2f2;
-    border-radius: 999px;
-}
-
-.raffle-table-wrapper::-webkit-scrollbar-thumb {
-    background: #e10600;
-    border-radius: 999px;
 }
 
 .raffle-table th {
@@ -555,9 +528,7 @@ def get_fundraising_data():
 
     for i, line in enumerate(lines):
 
-        line_lower = line.lower()
-
-        if line_lower == "donation summary":
+        if line.lower() == "donation summary":
 
             nearby_lines = lines[i:i + 20]
 
@@ -626,21 +597,29 @@ def get_fundraising_data():
 
     for i, line in enumerate(donation_lines):
 
-    amount_match = re.search(money_pattern, line)
+        amount_match = re.search(money_pattern, line)
 
-    if not amount_match:
-        continue
+        if not amount_match:
+            continue
 
-    nearby_text = " ".join(donation_lines[max(0, i - 3):i + 4]).lower()
+        nearby_text = " ".join(donation_lines[max(0, i - 4):i + 4]).lower()
 
-    if (
-        line.strip().startswith("+")
-        or "gift aid" in nearby_text
-        or "plus" in nearby_text
-    ):
-        continue
+        previous_clean_line = ""
 
-    amount = amount_match.group(0).replace(" ", "")
+        for previous_line in reversed(donation_lines[max(0, i - 4):i]):
+            if previous_line.strip():
+                previous_clean_line = previous_line.strip()
+                break
+
+        if (
+            line.strip().startswith("+")
+            or previous_clean_line == "+"
+            or "gift aid" in nearby_text
+            or "plus gift aid" in nearby_text
+        ):
+            continue
+
+        amount = amount_match.group(0).replace(" ", "")
 
         donor_name = "Anonymous"
 
@@ -648,17 +627,19 @@ def get_fundraising_data():
 
         for previous_line in reversed(previous_lines):
 
-            previous_lower = previous_line.lower()
+            previous_clean = previous_line.strip()
+            previous_lower = previous_clean.lower()
 
             if (
-                previous_lower.startswith("#")
-                or re.search(money_pattern, previous_line)
+                previous_clean == "+"
+                or previous_lower.startswith("#")
+                or re.search(money_pattern, previous_clean)
                 or "ago" in previous_lower
                 or any(term in previous_lower for term in ignore_terms)
             ):
                 continue
 
-            donor_name = previous_line
+            donor_name = previous_clean
             break
 
         donations.append({
@@ -740,6 +721,7 @@ else:
 
     numeric_amount = 0
 
+
 progress_percent = min(
     int((numeric_amount / TARGET_AMOUNT) * 100),
     100
@@ -760,7 +742,9 @@ with logo_col2:
         unsafe_allow_html=True
     )
 
+
 with logo_col3:
+
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
     st.image(ANDYS_LOGO, width=500)
 
@@ -869,14 +853,15 @@ else:
 
     filtered_raffle_df = raffle_df
 
-total_tickets = len(raffle_df)
 
+total_tickets = len(raffle_df)
 user_tickets = len(filtered_raffle_df)
 
 win_probability = 0
 
 if total_tickets > 0:
     win_probability = round((user_tickets / total_tickets) * 100, 2)
+
 
 raffle_left, raffle_right = st.columns([1.55, 0.85])
 
@@ -900,9 +885,28 @@ with raffle_left:
 
             raffle_rows += f"<tr><td>{ticket_number}</td><td>{name}</td></tr>"
 
-        table_html = f'<div class="raffle-table-wrapper"><table class="raffle-table"><thead><tr><th>Ticket Number</th><th>Ticket Holder</th></tr></thead><tbody>{raffle_rows}</tbody></table></div>'
+        table_html = f"""
+<div class="raffle-table-wrapper">
+    <table class="raffle-table">
+        <thead>
+            <tr>
+                <th>Ticket Number</th>
+                <th>Ticket Holder</th>
+            </tr>
+        </thead>
+        <tbody>
+            {raffle_rows}
+        </tbody>
+    </table>
+</div>
+"""
 
-    left_card_html = f'<div class="raffle-results-card"><div class="raffle-section-title">{tickets_title}</div>{table_html}</div>'
+    left_card_html = f"""
+<div class="raffle-results-card">
+    <div class="raffle-section-title">{tickets_title}</div>
+    {table_html}
+</div>
+"""
 
     st.markdown(left_card_html, unsafe_allow_html=True)
 
