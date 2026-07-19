@@ -3,3 +3,4 @@ pandas
 qrcode
 requests
 beautifulsoup4
+selenium
